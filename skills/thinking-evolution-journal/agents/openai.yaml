@@ -1,0 +1,7 @@
+interface:
+  display_name: "思维进化日记"
+  short_description: "分析日记中的情绪因果、成长阶段和长期模式"
+  default_prompt: "Use $thinking-evolution-journal to analyze my daily diary as a concise 思维进化日记 report."
+
+policy:
+  allow_implicit_invocation: true
