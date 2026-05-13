@@ -20,6 +20,12 @@ FOOTER_SAFE_GAP = 44
 BODY_FONT_SIZE = 38
 BODY_LINE_HEIGHT = 58
 BLANK_LINE_HEIGHT = 28
+REAL_BODY_FONT_SIZE = 36
+REAL_HEADING_FONT_SIZE = 50
+REAL_BODY_LINE_HEIGHT = 58
+REAL_HEADING_LINE_HEIGHT = 86
+REAL_BLANK_LINE_HEIGHT = 24
+REAL_CONTINUE_HEIGHT = 48
 BUBBLE_PADDING_X = 36
 BUBBLE_PADDING_Y = 34
 IMAGE_MAX_W = CONTENT_W
@@ -27,6 +33,7 @@ IMAGE_MAX_H = 1080
 IMAGE_RADIUS = 22
 TITLE_TEXT = "徐宿的思维进化日记"
 FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif"
+PINGFANG_PATH = "/System/Library/AssetsV2/com_apple_MobileAsset_Font8/86ba2c91f017a3749571a82f2c6d890ac7ffb2fb.asset/AssetData/PingFang.ttc"
 
 THEMES = {
     "dark": {
@@ -58,6 +65,8 @@ THEMES = {
 }
 
 FONT_CANDIDATES = [
+    PINGFANG_PATH,
+    "/System/Library/PrivateFrameworks/FontServices.framework/Versions/A/Resources/Reserved/PingFangUI.ttc",
     "/System/Library/Fonts/Hiragino Sans GB.ttc",
     "/System/Library/Fonts/STHeiti Light.ttc",
     "/System/Library/Fonts/STHeiti Medium.ttc",
@@ -226,12 +235,16 @@ def wrap_text(text, max_units):
     return lines
 
 
-def line_height(line):
+def line_height(line, style="wechat", role=None):
+    if style == "codex-real" and role == "assistant":
+        if line == "":
+            return REAL_BLANK_LINE_HEIGHT
+        return REAL_HEADING_LINE_HEIGHT if is_heading_line(line) else REAL_BODY_LINE_HEIGHT
     return BLANK_LINE_HEIGHT if line == "" else BODY_LINE_HEIGHT
 
 
-def lines_height(lines):
-    return sum(line_height(line) for line in lines)
+def lines_height(lines, style="wechat", role=None):
+    return sum(line_height(line, style=style, role=role) for line in lines)
 
 
 def is_heading_line(line):
@@ -249,13 +262,13 @@ def chunk_has_readable_start(chunk, remaining):
     return False
 
 
-def take_lines_by_height(lines, available_h):
+def take_lines_by_height(lines, available_h, style="wechat", role=None):
     if available_h < BODY_LINE_HEIGHT:
         return []
     taken = []
     used = 0
     for line in lines:
-        h = line_height(line)
+        h = line_height(line, style=style, role=role)
         if taken and used + h > available_h:
             break
         if not taken and h > available_h:
@@ -265,7 +278,7 @@ def take_lines_by_height(lines, available_h):
     return taken
 
 
-def message_blocks(messages, preserve_privacy=True, base_dir=None):
+def message_blocks(messages, preserve_privacy=True, base_dir=None, style="wechat"):
     blocks = []
     base_dir = base_dir or Path.cwd()
     for message in messages:
@@ -280,7 +293,10 @@ def message_blocks(messages, preserve_privacy=True, base_dir=None):
         blocks.extend(image_blocks)
         if not text:
             continue
-        max_units = 30 if role == "user" else 34
+        if style == "codex-real":
+            max_units = 38 if role == "user" else 52
+        else:
+            max_units = 30 if role == "user" else 34
         lines = wrap_text(text, max_units)
         blocks.append(
             {
@@ -293,32 +309,40 @@ def message_blocks(messages, preserve_privacy=True, base_dir=None):
     return blocks
 
 
-def block_height(block):
+def block_height(block, style="wechat"):
     if block.get("type") == "image":
         caption_h = 68 if block.get("caption") else 0
         return block["height"] + caption_h
+    if style == "codex-real" and block["role"] == "assistant":
+        return lines_height(block["lines"], style=style, role=block["role"])
     label_h = 28 if block.get("continued") else 0
-    return BUBBLE_PADDING_Y * 2 + lines_height(block["lines"]) + label_h
+    return BUBBLE_PADDING_Y * 2 + lines_height(block["lines"], style=style, role=block["role"]) + label_h
 
 
-def page_start_y(page_num):
+def page_start_y(page_num, style="wechat"):
+    if style == "codex-real":
+        return 150 if page_num == 1 else 126
     return TOP + 100 if page_num == 1 else 86
 
 
-def paginate(blocks):
+def paginate(blocks, style="wechat"):
     pages = []
     current = []
     page_num = 1
-    y = page_start_y(page_num)
+    y = page_start_y(page_num, style=style)
+    if style == "codex-real" and page_num > 1:
+        y += REAL_CONTINUE_HEIGHT
     for block in blocks:
         if block.get("type") == "image":
             gap = 28 if current else 0
-            h = block_height(block)
+            h = block_height(block, style=style)
             if current and y + gap + h > BOTTOM_LIMIT - FOOTER_SAFE_GAP:
                 pages.append(current)
                 page_num += 1
                 current = []
-                y = page_start_y(page_num)
+                y = page_start_y(page_num, style=style)
+                if style == "codex-real" and page_num > 1:
+                    y += REAL_CONTINUE_HEIGHT
                 gap = 0
             current.append(block)
             y += gap + h
@@ -329,16 +353,23 @@ def paginate(blocks):
         while remaining:
             continued = (not first_chunk) or block.get("continued", False)
             gap = 28 if current else 0
-            label_h = 28 if continued else 0
-            available_h = BOTTOM_LIMIT - FOOTER_SAFE_GAP - y - gap - BUBBLE_PADDING_Y * 2 - label_h
-            chunk_lines = take_lines_by_height(remaining, available_h)
+            if style == "codex-real" and block["role"] == "assistant":
+                label_h = 0
+                bubble_reserved_h = 0
+            else:
+                label_h = 28 if continued else 0
+                bubble_reserved_h = BUBBLE_PADDING_Y * 2
+            available_h = BOTTOM_LIMIT - FOOTER_SAFE_GAP - y - gap - bubble_reserved_h - label_h
+            chunk_lines = take_lines_by_height(remaining, available_h, style=style, role=block["role"])
 
             if not chunk_lines:
                 if current:
                     pages.append(current)
                     page_num += 1
                     current = []
-                    y = page_start_y(page_num)
+                    y = page_start_y(page_num, style=style)
+                    if style == "codex-real" and page_num > 1:
+                        y += REAL_CONTINUE_HEIGHT
                     continue
                 chunk_lines = remaining[:1]
 
@@ -346,7 +377,9 @@ def paginate(blocks):
                 pages.append(current)
                 page_num += 1
                 current = []
-                y = page_start_y(page_num)
+                y = page_start_y(page_num, style=style)
+                if style == "codex-real" and page_num > 1:
+                    y += REAL_CONTINUE_HEIGHT
                 continue
 
             remaining = remaining[len(chunk_lines):]
@@ -357,14 +390,16 @@ def paginate(blocks):
                 "continues": bool(remaining),
             }
             current.append(chunk)
-            y += gap + block_height(chunk)
+            y += gap + block_height(chunk, style=style)
             first_chunk = False
 
             if remaining and y >= BOTTOM_LIMIT - FOOTER_SAFE_GAP - BUBBLE_PADDING_Y * 2:
                 pages.append(current)
                 page_num += 1
                 current = []
-                y = page_start_y(page_num)
+                y = page_start_y(page_num, style=style)
+                if style == "codex-real" and page_num > 1:
+                    y += REAL_CONTINUE_HEIGHT
     if current:
         pages.append(current)
     return pages
@@ -442,13 +477,108 @@ def render_text_block(block, y, theme):
     return "\n".join(parts)
 
 
+def render_real_chrome(title):
+    title_font_size = 34
+    escaped = html.escape(title)
+    return "\n".join(
+        [
+            '<rect x="0" y="0" width="1080" height="108" rx="28" fill="#FFFFFF"/>',
+            '<line x1="0" y1="76" x2="1080" y2="76" stroke="#EFEFEF" stroke-width="1"/>',
+            '<circle cx="46" cy="34" r="14" fill="#FF5F57" stroke="#DDDDDD" stroke-width="1"/>',
+            '<circle cx="92" cy="34" r="14" fill="#FFBD2E" stroke="#DDDDDD" stroke-width="1"/>',
+            '<circle cx="138" cy="34" r="14" fill="#28C840" stroke="#DDDDDD" stroke-width="1"/>',
+            f'<text x="540" y="56" fill="#202124" font-size="{title_font_size}" '
+            f'font-family="{FONT_FAMILY}" text-anchor="middle">{escaped}</text>',
+        ]
+    )
+
+
+def render_real_continue(y):
+    return (
+        f'<text x="32" y="{y + 28}" fill="#8E8E93" font-size="28" '
+        f'font-weight="500" font-family="{FONT_FAMILY}">继续</text>'
+    )
+
+
+def render_real_user_block(block, y):
+    lines = block["lines"]
+    line_max = max([display_width(line) for line in lines] or [1])
+    text_w = min(704, max(360, math.ceil(line_max * 18.0)))
+    bubble_w = text_w + 58
+    h = BUBBLE_PADDING_Y * 2 + lines_height(lines)
+    x = WIDTH - 32 - bubble_w
+    parts = [
+        f'<rect x="{x}" y="{y}" width="{bubble_w}" height="{h}" rx="26" fill="#F1F1F1"/>',
+        svg_text_lines(lines, x + 28, y + 56, "#202124", font_size=36),
+    ]
+    return "\n".join(parts)
+
+
+def render_real_assistant_block(block, y):
+    parts = []
+    cursor_y = y
+    for line in block["lines"]:
+        if line:
+            if is_heading_line(line):
+                parts.append(
+                    f'<text x="32" y="{cursor_y + 48}" fill="#202124" font-size="{REAL_HEADING_FONT_SIZE}" '
+                    f'font-weight="700" font-family="{FONT_FAMILY}" xml:space="preserve">{html.escape(line)}</text>'
+                )
+            else:
+                parts.append(
+                    f'<text x="32" y="{cursor_y + 40}" fill="#202124" font-size="{REAL_BODY_FONT_SIZE}" '
+                    f'font-family="{FONT_FAMILY}" xml:space="preserve">{html.escape(line)}</text>'
+                )
+        cursor_y += line_height(line, style="codex-real", role="assistant")
+    return "\n".join(parts)
+
+
+def render_real_block(block, y, block_id):
+    if block.get("type") == "image":
+        return render_image_block(block, y, THEMES["light"], block_id)
+    if block["role"] == "user":
+        return render_real_user_block(block, y)
+    return render_real_assistant_block(block, y)
+
+
+def render_real_page(data, page_blocks, page_num, total_pages):
+    title = clean_text(data.get("window_title") or data.get("title") or TITLE_TEXT, preserve_privacy=True)
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}">',
+        '<rect width="1080" height="1440" fill="#FFFFFF"/>',
+        render_real_chrome(title),
+    ]
+    y = page_start_y(page_num, style="codex-real")
+    if page_num > 1:
+        parts.append(render_real_continue(y))
+        y += REAL_CONTINUE_HEIGHT
+    for index, block in enumerate(page_blocks):
+        if index:
+            y += 28
+        parts.append(render_real_block(block, y, f"real-{page_num}-{index}"))
+        y += block_height(block, style="codex-real")
+
+    footer_left = clean_text(data.get("source", ""), preserve_privacy=True) or "真实对话节选"
+    footer_right = f"{page_num}/{total_pages}"
+    parts.extend(
+        [
+            f'<text x="32" y="{FOOTER_Y}" fill="#9A9A9A" font-size="24" font-family="{FONT_FAMILY}">{html.escape(footer_left)}</text>',
+            f'<text x="{WIDTH - 32}" y="{FOOTER_Y}" fill="#9A9A9A" text-anchor="end" font-size="24" font-family="{FONT_FAMILY}">{footer_right}</text>',
+            "</svg>",
+        ]
+    )
+    return "\n".join(parts)
+
+
 def render_block(block, y, theme, block_id):
     if block.get("type") == "image":
         return render_image_block(block, y, theme, block_id)
     return render_text_block(block, y, theme)
 
 
-def render_page(data, page_blocks, page_num, total_pages, theme_name):
+def render_page(data, page_blocks, page_num, total_pages, theme_name, style_name="wechat"):
+    if style_name == "codex-real":
+        return render_real_page(data, page_blocks, page_num, total_pages)
     theme = THEMES[theme_name]
     subtitle = clean_text(data.get("subtitle", "关于 AI 共创"), preserve_privacy=True)
     if subtitle and not subtitle.startswith("关于"):
@@ -492,9 +622,15 @@ def font_path():
     return None
 
 
-def load_pil_font(size):
+def load_pil_font(size, bold=False, medium=False):
     from PIL import ImageFont
 
+    if Path(PINGFANG_PATH).exists():
+        if bold:
+            return ImageFont.truetype(PINGFANG_PATH, size=size, index=11)
+        if medium:
+            return ImageFont.truetype(PINGFANG_PATH, size=size, index=7)
+        return ImageFont.truetype(PINGFANG_PATH, size=size, index=3)
     path = font_path()
     if path:
         return ImageFont.truetype(path, size=size)
@@ -607,6 +743,76 @@ def render_png_page(data, page_blocks, page_num, total_pages, theme_name, output
     image.save(output)
 
 
+def render_png_real_chrome(draw, title):
+    draw.rounded_rectangle((0, 0, WIDTH, 108), radius=28, fill="#FFFFFF")
+    draw.line((0, 76, WIDTH, 76), fill="#EFEFEF", width=1)
+    for i, color in enumerate(("#FF5F57", "#FFBD2E", "#28C840")):
+        x = 46 + i * 46
+        draw.ellipse((x - 14, 34 - 14, x + 14, 34 + 14), fill=color, outline="#DDDDDD")
+    title_font = load_pil_font(34)
+    bbox = draw.textbbox((0, 0), title, font=title_font)
+    draw.text(((WIDTH - (bbox[2] - bbox[0])) / 2, 24), title, fill="#202124", font=title_font)
+
+
+def render_png_real_user_block(draw, block, y, body_font):
+    lines = block["lines"]
+    line_max = max([display_width(line) for line in lines] or [1])
+    text_w = min(704, max(360, math.ceil(line_max * 18.0)))
+    bubble_w = text_w + 58
+    h = BUBBLE_PADDING_Y * 2 + lines_height(lines)
+    x = WIDTH - 32 - bubble_w
+    draw.rounded_rectangle((x, y, x + bubble_w, y + h), radius=26, fill="#F1F1F1")
+    draw_multiline(draw, (x + 28, y + 36), lines, "#202124", body_font)
+
+
+def render_png_real_assistant_block(draw, block, y, body_font, heading_font, weak_font):
+    cursor_y = y
+    for line in block["lines"]:
+        if line:
+            if is_heading_line(line):
+                draw.text((32, cursor_y), line, fill="#202124", font=heading_font)
+            else:
+                draw.text((32, cursor_y), line, fill="#202124", font=body_font)
+        cursor_y += line_height(line, style="codex-real", role="assistant")
+
+
+def render_png_real_page(data, page_blocks, page_num, total_pages, output):
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (WIDTH, HEIGHT), "#FFFFFF")
+    draw = ImageDraw.Draw(image)
+    title = clean_text(data.get("window_title") or data.get("title") or TITLE_TEXT, preserve_privacy=True)
+    render_png_real_chrome(draw, title)
+
+    body_font = load_pil_font(REAL_BODY_FONT_SIZE)
+    heading_font = load_pil_font(REAL_HEADING_FONT_SIZE, bold=True)
+    weak_font = load_pil_font(28, medium=True)
+    footer_font = load_pil_font(24)
+
+    y = page_start_y(page_num, style="codex-real")
+    if page_num > 1:
+        draw.text((32, y), "继续", fill="#8E8E93", font=weak_font)
+        y += REAL_CONTINUE_HEIGHT
+
+    for index, block in enumerate(page_blocks):
+        if index:
+            y += 28
+        if block.get("type") == "image":
+            render_png_image_block(image, draw, block, y, THEMES["light"], footer_font)
+        elif block["role"] == "user":
+            render_png_real_user_block(draw, block, y, body_font)
+        else:
+            render_png_real_assistant_block(draw, block, y, body_font, heading_font, weak_font)
+        y += block_height(block, style="codex-real")
+
+    footer_left = clean_text(data.get("source", ""), preserve_privacy=True) or "真实对话节选"
+    footer_right = f"{page_num}/{total_pages}"
+    draw.text((32, FOOTER_Y - 20), footer_left, fill="#9A9A9A", font=footer_font)
+    bbox = draw.textbbox((0, 0), footer_right, font=footer_font)
+    draw.text((WIDTH - 32 - (bbox[2] - bbox[0]), FOOTER_Y - 20), footer_right, fill="#9A9A9A", font=footer_font)
+    image.save(output)
+
+
 def write_preview(out_dir, files):
     cards = "\n".join(
         f'<section><img src="{html.escape(path.name)}" alt="{html.escape(path.name)}"></section>'
@@ -634,6 +840,7 @@ def main():
     parser.add_argument("input", help="Input JSON file")
     parser.add_argument("--out", help="Output directory. Defaults to Codex应用工作台/4-对话截图卡片/exports/YYYY-MM-DD-主题")
     parser.add_argument("--theme", choices=["dark", "light"], help="Override theme")
+    parser.add_argument("--style", choices=["wechat", "codex-real"], help="Override visual style")
     parser.add_argument("--no-privacy", action="store_true", help="Disable automatic privacy masking")
     parser.add_argument("--png", action="store_true", help="Also render PNG files when Pillow is available")
     args = parser.parse_args()
@@ -643,25 +850,37 @@ def main():
     out_dir = Path(args.out) if args.out else default_output_dir(data)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    theme_name = args.theme or data.get("theme", "dark")
-    if theme_name not in THEMES:
-        theme_name = "dark"
+    style_name = args.style or data.get("style", "wechat")
+    if style_name not in ("wechat", "codex-real"):
+        style_name = "wechat"
 
-    blocks = message_blocks(data.get("messages", []), preserve_privacy=not args.no_privacy, base_dir=input_path.parent)
-    pages = paginate(blocks)
+    theme_name = args.theme or data.get("theme", "light")
+    if theme_name not in THEMES:
+        theme_name = "light"
+
+    blocks = message_blocks(
+        data.get("messages", []),
+        preserve_privacy=not args.no_privacy,
+        base_dir=input_path.parent,
+        style=style_name,
+    )
+    pages = paginate(blocks, style=style_name)
     if not pages:
         raise SystemExit("No messages to render.")
 
     files = []
     for i, page in enumerate(pages, 1):
-        svg = render_page(data, page, i, len(pages), theme_name)
+        svg = render_page(data, page, i, len(pages), theme_name, style_name=style_name)
         output = out_dir / f"card-{i:02d}.svg"
         output.write_text(svg, encoding="utf-8")
         files.append(output)
         if args.png:
             png_output = out_dir / f"card-{i:02d}.png"
             try:
-                render_png_page(data, page, i, len(pages), theme_name, png_output)
+                if style_name == "codex-real":
+                    render_png_real_page(data, page, i, len(pages), png_output)
+                else:
+                    render_png_page(data, page, i, len(pages), theme_name, png_output)
             except ModuleNotFoundError as exc:
                 if exc.name == "PIL":
                     raise SystemExit("PNG export requires Pillow. Re-run without --png or use a Python environment with Pillow.") from exc

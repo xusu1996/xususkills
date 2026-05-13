@@ -14,7 +14,8 @@ description: Create truthful screenshot-style social cards from real human-AI co
 - 尺寸：1080 x 1440
 - 格式：默认生成 SVG；使用 `--png` 时同时导出 PNG
 - 默认输出目录：`Codex应用工作台/4-对话截图卡片/exports/日期-主题`
-- 主题：默认暗色；用户要求亮色时使用亮色
+- 默认风格：白色微信气泡版（`style=wechat` + `theme=light`）
+- 可选风格：真实 Codex 日记室版（`style=codex-real`）
 - 数量：由真实内容长度决定，不自动扩写成更多页
 - 标题：第一张固定显示“徐宿的思维进化日记”，副标题显示“关于 xxx”
 - 多页：第二张开始不显示标题和副标题，直接显示对话内容
@@ -22,6 +23,7 @@ description: Create truthful screenshot-style social cards from real human-AI co
 - 字体：手机端可读性优先，正文使用接近微信聊天截图的较大字号
 - Markdown：将 `### 标题`、加粗、行内代码等标记渲染成普通文本
 - 图片：大图模式独立展示；同一条消息同时包含图片和长文字时，默认图片在上、文字在下
+- 字体：PNG 优先使用 PingFang SC；标题使用字体本身的 Semibold/Medium 字重，不使用伪加粗
 
 ## 工作流程
 
@@ -30,7 +32,7 @@ description: Create truthful screenshot-style social cards from real human-AI co
 3. 保留真实发言顺序和原文，按用户/AI 两类角色整理消息。
 4. 遮盖隐私；不要改写观点和语气。
 5. 图片使用大图模式，保持比例并自动缩放；同一消息内默认图片先于长文字展示。
-6. 按自然消息边界和段落可读性分页。
+6. 按自然消息边界和段落可读性分页；`codex-real` 风格的续页左上角显示“继续”。
 7. 使用 `scripts/render_cards.py` 生成卡片，并给出文件位置。
 
 ## 对话范围输入
@@ -90,13 +92,38 @@ Codex应用工作台/4-对话截图卡片/exports/YYYY-MM-DD-主题
 python3 skills/dialogue-screenshot-cards/scripts/render_cards.py input.json --png
 ```
 
+默认生成白色微信气泡版。切换方式：
+
+```bash
+# 白色微信气泡版，默认
+python3 skills/dialogue-screenshot-cards/scripts/render_cards.py input.json --png
+
+# 黑色微信气泡版
+python3 skills/dialogue-screenshot-cards/scripts/render_cards.py input.json --theme dark --png
+
+# 真实 Codex 日记室版
+python3 skills/dialogue-screenshot-cards/scripts/render_cards.py input.json --style codex-real --png
+```
+
+也可以在 JSON 中写：
+
+```json
+{
+  "style": "codex-real",
+  "theme": "light"
+}
+```
+
+`style=wechat` 支持 `theme=light/dark`；`style=codex-real` 固定为白色日记室窗口感。
+
 输入 JSON 示例：
 
 ```json
 {
   "title": "Skill 是什么？",
   "subtitle": "关于 skill 的创造",
-  "theme": "dark",
+  "style": "wechat",
+  "theme": "light",
   "messages": [
     {
       "role": "user",
