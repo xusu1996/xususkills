@@ -8,6 +8,7 @@
 
 - `dialogue-screenshot-cards`：把真实的人机对话片段整理成适合发布的小红书竖图截图卡片，重点是保留原话、清理隐私、分页排版，不编造内容。
 - `thinking-evolution-journal`：分析中文日记、复盘和自由表达内容，输出关于情绪、因果链、成长阶段和长期模式的“思维进化日记”报告。
+- `xs-cogreport`：徐宿的认知问题诊断器，按阶段筛选认知问题、收集困境叙述和解释材料，并只基于用户已提供语言输出对应层级的诊断报告。
 
 ## 如何安装
 
@@ -21,6 +22,10 @@
 
     https://github.com/xusu1996/xususkills/tree/main/skills/thinking-evolution-journal
 
+安装“认知问题诊断器”：
+
+    https://github.com/xusu1996/xususkills/tree/main/skills/xs-cogreport
+
 安装完成后，需要重启 Codex，新的 skill 才会出现在可用技能中。
 
 ## 如何调用
@@ -31,9 +36,13 @@
 
     Use $thinking-evolution-journal to analyze this diary.
 
+    Use $xs-cogreport to diagnose my cognitive dilemma.
+
 也可以用中文直接说明：
 
     使用 thinking-evolution-journal 这个 skill，帮我分析这篇日记。
+
+    使用 xs-cogreport，帮我诊断这个认知问题。
 
 ## 文件结构
 
@@ -43,7 +52,11 @@
     │   ├── agents/openai.yaml
     │   ├── references/
     │   └── scripts/
-    └── thinking-evolution-journal/
+    ├── thinking-evolution-journal/
+    │   ├── SKILL.md
+    │   ├── agents/openai.yaml
+    │   └── references/
+    └── xs-cogreport/
         ├── SKILL.md
         ├── agents/openai.yaml
         └── references/

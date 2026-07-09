@@ -1,0 +1,4 @@
+interface:
+  display_name: "认知问题分层诊断"
+  short_description: "按材料层级筛选、追问并诊断认知困境"
+  default_prompt: "Use $xs-cogreport to diagnose my cognitive dilemma by stages without guessing my meaning."
